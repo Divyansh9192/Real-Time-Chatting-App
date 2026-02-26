@@ -464,7 +464,7 @@ export function ChatClient({ conversationId }: ChatClientProps) {
           <div className="mb-3 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <MessageCircle className="h-5 w-5 text-sky-600" />
-              <p className="text-base font-semibold text-slate-900">Live Chat</p>
+              <p className="text-base font-semibold text-slate-900">NeonChats</p>
             </div>
             <UserButton afterSignOutUrl="/" />
           </div>
@@ -740,7 +740,7 @@ export function ChatClient({ conversationId }: ChatClientProps) {
                       >
                         <div
                           className={cn(
-                            "flex items-end gap-2",
+                            "flex w-full items-end gap-2",
                             entry.isOwnMessage ? "flex-row-reverse" : "flex-row"
                           )}
                         >
@@ -752,7 +752,7 @@ export function ChatClient({ conversationId }: ChatClientProps) {
                               className="h-7 w-7 shrink-0 text-[10px]"
                             />
                           )}
-                          <div className="relative max-w-[80%]">
+                          <div className="relative w-fit min-w-[8rem] max-w-[80%]">
                             {!entry.isDeleted && (
                               <div className="pointer-events-none absolute -top-8 right-0 z-10 flex gap-1 rounded-md border border-slate-200 bg-white p-1 opacity-0 shadow transition-opacity group-hover:pointer-events-auto group-hover:opacity-100">
                                 {REACTIONS.map((emoji) => (
@@ -805,7 +805,7 @@ export function ChatClient({ conversationId }: ChatClientProps) {
                               )}
                               <p
                                 className={cn(
-                                  "mt-1 text-[11px]",
+                                  "mt-1 whitespace-nowrap text-[11px]",
                                   entry.isOwnMessage ? "text-sky-100" : "text-slate-400"
                                 )}
                               >
