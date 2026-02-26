@@ -6,7 +6,7 @@ import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, MessageCircle, Plus, Search, Send, Trash2, Users } from "lucide-react";
-import { UserButton } from "@clerk/nextjs";
+import { UserButton, useUser } from "@clerk/nextjs";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ interface ChatClientProps {
 
 export function ChatClient({ conversationId }: ChatClientProps) {
   const router = useRouter();
+  const { user } = useUser();
   const selectedConversationId = conversationId as Id<"conversations"> | undefined;
   const me = useQuery(api.users.me, {});
   const users = useQuery(api.users.listUsers, {});
@@ -69,8 +70,24 @@ export function ChatClient({ conversationId }: ChatClientProps) {
   const previousMessageCountRef = useRef(0);
   const lastTypingPingRef = useRef(0);
 
+  const clerkName =
+    user?.fullName?.trim() ||
+    [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim() ||
+    user?.username ||
+    user?.primaryEmailAddress?.emailAddress?.split("@")[0] ||
+    undefined;
+  const clerkEmail =
+    user?.primaryEmailAddress?.emailAddress ||
+    user?.emailAddresses?.[0]?.emailAddress ||
+    undefined;
+  const clerkImageUrl = user?.imageUrl || undefined;
+
   useEffect(() => {
-    ensureCurrentUser({}).catch(() => undefined);
+    ensureCurrentUser({
+      name: clerkName,
+      email: clerkEmail,
+      imageUrl: clerkImageUrl,
+    }).catch(() => undefined);
     setPresence({ isOnline: true }).catch(() => undefined);
 
     const handleVisibility = () => {
@@ -95,7 +112,7 @@ export function ChatClient({ conversationId }: ChatClientProps) {
       window.removeEventListener("beforeunload", handleBeforeUnload);
       setPresence({ isOnline: false }).catch(() => undefined);
     };
-  }, [ensureCurrentUser, setPresence]);
+  }, [ensureCurrentUser, setPresence, clerkName, clerkEmail, clerkImageUrl]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setClockMs(Date.now()), 500);

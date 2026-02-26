@@ -35,16 +35,21 @@ function normalizeUser<T extends { name?: string; username?: string; email?: str
 }
 
 export const ensureCurrentUser = mutation({
-  args: {},
-  handler: async (ctx) => {
+  args: {
+    name: v.optional(v.string()),
+    email: v.optional(v.string()),
+    imageUrl: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
       throw new ConvexError("Unauthenticated");
     }
 
-    const name = identity.name ?? identity.email?.split("@")[0] ?? "Anonymous";
-    const email = identity.email ?? "";
-    const imageUrl = identity.pictureUrl ?? "";
+    const fallbackName = identity.name ?? identity.email?.split("@")[0] ?? "Anonymous";
+    const name = args.name?.trim() || fallbackName;
+    const email = args.email?.trim() || identity.email || "";
+    const imageUrl = args.imageUrl?.trim() || identity.pictureUrl || "";
     const now = Date.now();
 
     const existing = await ctx.db
