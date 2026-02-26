@@ -226,3 +226,63 @@ export const createGroup = mutation({
     });
   },
 });
+
+export const deleteConversation = mutation({
+  args: {
+    conversationId: v.id("conversations"),
+  },
+  handler: async (ctx, args) => {
+    const currentUser = await requireCurrentUser(ctx);
+    const conversation = await ctx.db.get(args.conversationId);
+    if (!conversation) {
+      throw new ConvexError("Conversation not found");
+    }
+
+    const participants = getConversationParticipants(conversation);
+    if (!participants.includes(currentUser._id)) {
+      throw new ConvexError("Unauthorized");
+    }
+
+    const typingRows = await ctx.db
+      .query("typingIndicators")
+      .withIndex("by_conversation", (q) =>
+        q.eq("conversationId", args.conversationId)
+      )
+      .collect();
+
+    const readRows = await ctx.db
+      .query("messageReads")
+      .withIndex("by_conversation", (q) =>
+        q.eq("conversationId", args.conversationId)
+      )
+      .collect();
+
+    const messageRows = await ctx.db
+      .query("messages")
+      .withIndex("by_conversation_created_at", (q) =>
+        q.eq("conversationId", args.conversationId)
+      )
+      .collect();
+
+    for (const row of typingRows) {
+      await ctx.db.delete(row._id);
+    }
+
+    for (const row of readRows) {
+      await ctx.db.delete(row._id);
+    }
+
+    for (const row of messageRows) {
+      await ctx.db.delete(row._id);
+    }
+
+    await ctx.db.delete(conversation._id);
+
+    return {
+      deletedConversationId: conversation._id,
+      deletedMessageCount: messageRows.length,
+      deletedReadCount: readRows.length,
+      deletedTypingCount: typingRows.length,
+    };
+  },
+});

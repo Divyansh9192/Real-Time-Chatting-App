@@ -64,5 +64,6 @@ export default defineSchema({
     lastReadMessageId: v.id("messages"),
   })
     .index("by_conversation_user", ["conversationId", "userId"])
+    .index("by_conversation", ["conversationId"])
     .index("by_user", ["userId"]),
 });

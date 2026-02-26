@@ -30,17 +30,26 @@ export function ChatClient({ conversationId }: ChatClientProps) {
   const me = useQuery(api.users.me, {});
   const users = useQuery(api.users.listUsers, {});
   const conversations = useQuery(api.conversations.listForSidebar, {});
-  const conversation = useQuery(
-    api.conversations.getById,
-    selectedConversationId ? { conversationId: selectedConversationId } : "skip"
-  );
+  const selectedConversationSummary = useMemo(() => {
+    if (!conversations || !selectedConversationId) {
+      return null;
+    }
+    return (
+      conversations.find((row) => row.conversationId === selectedConversationId) ??
+      null
+    );
+  }, [conversations, selectedConversationId]);
   const messages = useQuery(
     api.messages.listByConversation,
-    selectedConversationId ? { conversationId: selectedConversationId } : "skip"
+    selectedConversationId && selectedConversationSummary
+      ? { conversationId: selectedConversationId }
+      : "skip"
   );
   const typingRows = useQuery(
     api.typingIndicators.listForConversation,
-    selectedConversationId ? { conversationId: selectedConversationId } : "skip"
+    selectedConversationId && selectedConversationSummary
+      ? { conversationId: selectedConversationId }
+      : "skip"
   );
 
   const ensureCurrentUser = useMutation(api.users.ensureCurrentUser);
@@ -53,11 +62,16 @@ export function ChatClient({ conversationId }: ChatClientProps) {
   const toggleReaction = useMutation(api.messages.toggleReaction);
   const upsertTyping = useMutation(api.typingIndicators.upsert);
   const clearTyping = useMutation(api.typingIndicators.clear);
+  const deleteConversation = useMutation(api.conversations.deleteConversation);
 
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [bannerMessage, setBannerMessage] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isDeletingConversation, setIsDeletingConversation] = useState(false);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [isNearBottom, setIsNearBottom] = useState(true);
   const [clockMs, setClockMs] = useState(Date.now());
@@ -130,6 +144,29 @@ export function ChatClient({ conversationId }: ChatClientProps) {
     return () => window.clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    const pending =
+      typeof window !== "undefined"
+        ? window.sessionStorage.getItem("chat_delete_success")
+        : null;
+    if (!pending) {
+      return;
+    }
+    setBannerMessage(pending);
+    window.sessionStorage.removeItem("chat_delete_success");
+    const timeout = window.setTimeout(() => setBannerMessage(null), 4000);
+    return () => window.clearTimeout(timeout);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedConversationId || conversations === undefined) {
+      return;
+    }
+    if (!selectedConversationSummary) {
+      router.replace("/chat");
+    }
+  }, [selectedConversationId, conversations, selectedConversationSummary, router]);
+
   const filteredUsers = useMemo(() => {
     if (!users) {
       return [];
@@ -147,16 +184,6 @@ export function ChatClient({ conversationId }: ChatClientProps) {
     }
     return typingRows.filter((row) => clockMs - row.updatedAt < 2000);
   }, [typingRows, clockMs]);
-
-  const selectedConversationSummary = useMemo(() => {
-    if (!conversations || !selectedConversationId) {
-      return null;
-    }
-    return (
-      conversations.find((row) => row.conversationId === selectedConversationId) ??
-      null
-    );
-  }, [conversations, selectedConversationId]);
 
   const handleOpenConversation = (id: Id<"conversations">) => {
     router.push(`/chat/${id}`);
@@ -296,6 +323,37 @@ export function ChatClient({ conversationId }: ChatClientProps) {
     }
   };
 
+  const handleDeleteConversation = async () => {
+    if (!selectedConversationId || isDeletingConversation) {
+      return;
+    }
+
+    setDeleteError(null);
+    setIsDeletingConversation(true);
+    try {
+      await clearTyping({ conversationId: selectedConversationId }).catch(() => undefined);
+      await deleteConversation({ conversationId: selectedConversationId });
+
+      setMessage("");
+      setSendError(null);
+      setShowJumpToLatest(false);
+      setIsNearBottom(true);
+      setIsDeleteDialogOpen(false);
+
+      if (typeof window !== "undefined") {
+        window.sessionStorage.setItem(
+          "chat_delete_success",
+          "Chat deleted for everyone."
+        );
+      }
+      router.replace("/chat");
+    } catch {
+      setDeleteError("Failed to delete this chat. Please try again.");
+    } finally {
+      setIsDeletingConversation(false);
+    }
+  };
+
   const conversationPanelVisible = Boolean(selectedConversationId);
 
   return (
@@ -331,6 +389,11 @@ export function ChatClient({ conversationId }: ChatClientProps) {
         </div>
 
         <div className="space-y-3 p-3">
+          {bannerMessage && (
+            <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+              {bannerMessage}
+            </div>
+          )}
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <Input
@@ -473,7 +536,7 @@ export function ChatClient({ conversationId }: ChatClientProps) {
               </p>
             </div>
           </div>
-        ) : !conversation || !messages || !selectedConversationSummary ? (
+        ) : !messages || !selectedConversationSummary ? (
           <div className="flex h-full flex-col">
             <div className="border-b border-slate-200 bg-white px-4 py-3">
               <div className="h-8 w-40 animate-pulse rounded bg-slate-200" />
@@ -520,7 +583,21 @@ export function ChatClient({ conversationId }: ChatClientProps) {
                     </p>
                   </div>
                 </div>
-                <UserButton afterSignOutUrl="/" />
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => {
+                      setDeleteError(null);
+                      setIsDeleteDialogOpen(true);
+                    }}
+                    disabled={isDeletingConversation}
+                    title="Delete chat"
+                  >
+                    <Trash2 className="h-4 w-4 text-rose-600" />
+                  </Button>
+                  <UserButton afterSignOutUrl="/" />
+                </div>
               </div>
             </header>
 
@@ -648,6 +725,11 @@ export function ChatClient({ conversationId }: ChatClientProps) {
             </div>
 
             <footer className="border-t border-slate-200 bg-white px-4 py-3">
+              {deleteError && (
+                <div className="mx-auto mb-2 w-full max-w-3xl rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                  {deleteError}
+                </div>
+              )}
               {activeTypers.length > 0 && (
                 <div className="mx-auto mb-2 flex w-full max-w-3xl items-center gap-2 text-xs text-slate-500">
                   <span>
@@ -706,6 +788,44 @@ export function ChatClient({ conversationId }: ChatClientProps) {
           </>
         )}
       </section>
+
+      <Dialog
+        open={isDeleteDialogOpen}
+        onClose={() => {
+          if (!isDeletingConversation) {
+            setIsDeleteDialogOpen(false);
+          }
+        }}
+        title="Delete this chat for everyone?"
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-slate-600">
+            This permanently deletes the full conversation thread for all
+            participants. This action cannot be undone.
+          </p>
+          {deleteError && (
+            <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+              {deleteError}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="ghost"
+              disabled={isDeletingConversation}
+              onClick={() => setIsDeleteDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={!selectedConversationId || isDeletingConversation}
+              onClick={handleDeleteConversation}
+            >
+              {isDeletingConversation ? "Deleting..." : "Delete chat"}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
 
       <Dialog
         open={isGroupDialogOpen}
