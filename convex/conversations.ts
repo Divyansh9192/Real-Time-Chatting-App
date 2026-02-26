@@ -1,8 +1,10 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { mutation, query } from "./_generated/server";
+import { mutation, query, MutationCtx, QueryCtx } from "./_generated/server";
 import { ConvexError, v } from "convex/values";
+import { Doc, Id } from "./_generated/dataModel";
 
-async function requireCurrentUser(ctx: any) {
+type Ctx = QueryCtx | MutationCtx;
+
+async function requireCurrentUser(ctx: Ctx): Promise<Doc<"users">> {
   const identity = await ctx.auth.getUserIdentity();
   if (!identity) {
     throw new ConvexError("Unauthenticated");
@@ -10,7 +12,7 @@ async function requireCurrentUser(ctx: any) {
 
   const currentUser = await ctx.db
     .query("users")
-    .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
+    .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
     .unique();
 
   if (!currentUser) {
@@ -20,39 +22,54 @@ async function requireCurrentUser(ctx: any) {
   return currentUser;
 }
 
+function getConversationParticipants(conversation: Doc<"conversations">) {
+  return conversation.participants ?? conversation.participantIds ?? [];
+}
+
+function getConversationLastMessageTime(conversation: Doc<"conversations">) {
+  return conversation.lastMessageTime ?? conversation.lastMessageAt ?? 0;
+}
+
+function isGroupConversation(conversation: Doc<"conversations">) {
+  return conversation.isGroup ?? false;
+}
+
 export const listForSidebar = query({
   args: {},
   handler: async (ctx) => {
     const currentUser = await requireCurrentUser(ctx);
     const conversations = await ctx.db.query("conversations").collect();
-    const myConversations = conversations.filter((conversation: any) =>
-      conversation.participants.includes(currentUser._id)
+    const myConversations = conversations.filter((conversation) =>
+      getConversationParticipants(conversation).includes(currentUser._id)
     );
 
     const readRows = await ctx.db
       .query("messageReads")
-      .withIndex("by_user", (q: any) => q.eq("userId", currentUser._id))
+      .withIndex("by_user", (q) => q.eq("userId", currentUser._id))
       .collect();
-    const readByConversation = new Map(
-      readRows.map((row: any) => [row.conversationId, row])
+    const readByConversation = new Map<Id<"conversations">, Doc<"messageReads">>(
+      readRows.map((row) => [row.conversationId, row])
     );
 
     const rows = await Promise.all(
-      myConversations.map(async (conversation: any) => {
+      myConversations.map(async (conversation) => {
+        const participants = getConversationParticipants(conversation);
+        const isGroup = isGroupConversation(conversation);
         const participantUsers = await Promise.all(
-          conversation.participants.map((participantId: any) =>
-            ctx.db.get(participantId)
-          )
+          participants.map((participantId) => ctx.db.get(participantId))
         );
-        const safeParticipants = participantUsers.filter(Boolean);
+        const safeParticipants = participantUsers.filter(
+          (user): user is Doc<"users"> => user !== null
+        );
 
-        let lastMessage = conversation.lastMessageId
-          ? await ctx.db.get(conversation.lastMessageId)
-          : null;
+        let lastMessage: Doc<"messages"> | null = null;
+        if (conversation.lastMessageId) {
+          lastMessage = await ctx.db.get(conversation.lastMessageId);
+        }
         if (!lastMessage) {
           const latest = await ctx.db
             .query("messages")
-            .withIndex("by_conversation_created_at", (q: any) =>
+            .withIndex("by_conversation_created_at", (q) =>
               q.eq("conversationId", conversation._id)
             )
             .order("desc")
@@ -71,41 +88,40 @@ export const listForSidebar = query({
 
         const allMessages = await ctx.db
           .query("messages")
-          .withIndex("by_conversation_created_at", (q: any) =>
+          .withIndex("by_conversation_created_at", (q) =>
             q.eq("conversationId", conversation._id)
           )
           .collect();
         const unreadCount = allMessages.filter(
-          (message: any) =>
+          (message) =>
             message.senderId !== currentUser._id &&
             message.createdAt > lastReadCreatedAt
         ).length;
 
         const otherUser = safeParticipants.find(
-          (user: any) => user._id !== currentUser._id
+          (user) => user._id !== currentUser._id
         );
-        const title = conversation.isGroup
+        const title = isGroup
           ? conversation.groupName ?? "Untitled Group"
           : otherUser?.name ?? "Unknown User";
-        const avatarUrl = conversation.isGroup ? "" : (otherUser?.imageUrl ?? "");
+        const avatarUrl = isGroup ? "" : otherUser?.imageUrl ?? "";
 
         return {
           conversationId: conversation._id,
-          isGroup: conversation.isGroup,
+          isGroup,
           title,
           avatarUrl,
           memberCount: safeParticipants.length,
-          isOnline: conversation.isGroup ? false : Boolean(otherUser?.isOnline),
-          lastSeen: conversation.isGroup ? null : (otherUser?.lastSeen ?? null),
+          isOnline: isGroup ? false : Boolean(otherUser?.isOnline),
+          lastSeen: isGroup ? null : otherUser?.lastSeen ?? null,
           lastMessagePreview: lastMessage
-            ? lastMessage.isDeleted
+            ? (lastMessage.isDeleted ?? false)
               ? "This message was deleted"
-              : lastMessage.content
+              : lastMessage.content ?? lastMessage.text ?? ""
             : "",
-          lastMessageTime:
-            lastMessage?.createdAt ?? conversation.lastMessageTime ?? 0,
+          lastMessageTime: lastMessage?.createdAt ?? getConversationLastMessageTime(conversation),
           unreadCount,
-          participants: safeParticipants.map((user: any) => ({
+          participants: safeParticipants.map((user) => ({
             _id: user._id,
             name: user.name,
             imageUrl: user.imageUrl,
@@ -132,17 +148,20 @@ export const getById = query({
       throw new ConvexError("Conversation not found");
     }
 
-    if (!conversation.participants.includes(currentUser._id)) {
+    const participants = getConversationParticipants(conversation);
+    if (!participants.includes(currentUser._id)) {
       throw new ConvexError("Unauthorized");
     }
 
-    const participants = await Promise.all(
-      conversation.participants.map((participantId: any) => ctx.db.get(participantId))
+    const participantUsers = await Promise.all(
+      participants.map((participantId) => ctx.db.get(participantId))
     );
 
     return {
       ...conversation,
-      participants: participants.filter(Boolean),
+      participants: participantUsers.filter(
+        (participant): participant is Doc<"users"> => participant !== null
+      ),
     };
   },
 });
@@ -160,11 +179,11 @@ export const getOrCreateDirect = mutation({
 
     const allConversations = await ctx.db.query("conversations").collect();
     const existing = allConversations.find(
-      (conversation: any) =>
-        !conversation.isGroup &&
-        conversation.participants.length === 2 &&
-        conversation.participants.includes(currentUser._id) &&
-        conversation.participants.includes(args.otherUserId)
+      (conversation) =>
+        !isGroupConversation(conversation) &&
+        getConversationParticipants(conversation).length === 2 &&
+        getConversationParticipants(conversation).includes(currentUser._id) &&
+        getConversationParticipants(conversation).includes(args.otherUserId)
     );
 
     if (existing) {
@@ -192,7 +211,7 @@ export const createGroup = mutation({
     }
 
     const uniqueMembers = Array.from(
-      new Set([...args.memberIds, currentUser._id])
+      new Set<Id<"users">>([...args.memberIds, currentUser._id])
     );
     if (uniqueMembers.length < 3) {
       throw new ConvexError("A group needs at least 3 members including you");

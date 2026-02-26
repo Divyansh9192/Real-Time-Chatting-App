@@ -1,8 +1,9 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { mutation, query } from "./_generated/server";
+import { mutation, query, MutationCtx, QueryCtx } from "./_generated/server";
 import { ConvexError, v } from "convex/values";
 
-async function requireCurrentUser(ctx: any) {
+type Ctx = QueryCtx | MutationCtx;
+
+async function requireCurrentUser(ctx: Ctx) {
   const identity = await ctx.auth.getUserIdentity();
   if (!identity) {
     throw new ConvexError("Unauthenticated");
@@ -18,6 +19,19 @@ async function requireCurrentUser(ctx: any) {
   }
 
   return { currentUser, identity };
+}
+
+function normalizeUser<T extends { name?: string; username?: string; email?: string; imageUrl?: string; isOnline?: boolean; lastSeen?: number; createdAt?: number }>(
+  user: T
+) {
+  return {
+    ...user,
+    name: user.name ?? user.username ?? "Anonymous",
+    email: user.email ?? "",
+    imageUrl: user.imageUrl ?? "",
+    isOnline: user.isOnline ?? false,
+    lastSeen: user.lastSeen ?? user.createdAt ?? Date.now(),
+  };
 }
 
 export const ensureCurrentUser = mutation({
@@ -39,10 +53,13 @@ export const ensureCurrentUser = mutation({
       .unique();
 
     if (existing) {
+      const normalizedExisting = normalizeUser(existing);
       if (
-        existing.name !== name ||
-        existing.email !== email ||
-        existing.imageUrl !== imageUrl
+        normalizedExisting.name !== name ||
+        normalizedExisting.email !== email ||
+        normalizedExisting.imageUrl !== imageUrl ||
+        existing.isOnline === undefined ||
+        existing.lastSeen === undefined
       ) {
         await ctx.db.patch(existing._id, {
           name,
@@ -69,7 +86,7 @@ export const me = query({
   args: {},
   handler: async (ctx) => {
     const { currentUser } = await requireCurrentUser(ctx);
-    return currentUser;
+    return normalizeUser(currentUser);
   },
 });
 
@@ -80,6 +97,7 @@ export const listUsers = query({
     const users = await ctx.db.query("users").collect();
     return users
       .filter((user) => user._id !== currentUser._id)
+      .map((user) => normalizeUser(user))
       .sort((a, b) => a.name.localeCompare(b.name));
   },
 });

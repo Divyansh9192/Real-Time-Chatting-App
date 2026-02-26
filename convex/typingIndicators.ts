@@ -25,7 +25,8 @@ async function requireConversationMembership(ctx: any, conversationId: any, curr
   if (!conversation) {
     throw new ConvexError("Conversation not found");
   }
-  if (!conversation.participants.includes(currentUserId)) {
+  const participants = conversation.participants ?? conversation.participantIds ?? [];
+  if (!participants.includes(currentUserId)) {
     throw new ConvexError("Unauthorized");
   }
   return conversation;
@@ -107,7 +108,7 @@ export const listForConversation = query({
 
     return others.map((row: any) => ({
       ...row,
-      userName: userMap.get(row.userId)?.name ?? "Someone",
+      userName: userMap.get(row.userId)?.name ?? userMap.get(row.userId)?.username ?? "Someone",
     }));
   },
 });

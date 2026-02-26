@@ -17,6 +17,7 @@ import { formatLastSeen, formatMessageTimestamp } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 const REACTIONS = ["👍", "❤️", "😂", "😮", "😢"] as const;
+type MessageReaction = { userId: Id<"users">; emoji: string };
 
 interface ChatClientProps {
   conversationId?: string;
@@ -399,7 +400,7 @@ export function ChatClient({ conversationId }: ChatClientProps) {
                 </>
               ) : filteredUsers.length === 0 ? (
                 <p className="rounded-md border border-dashed border-slate-300 p-3 text-sm text-slate-500">
-                  No users found for "{search}"
+                  No users found for &quot;{search}&quot;
                 </p>
               ) : (
                 filteredUsers.map((user) => (
@@ -512,7 +513,7 @@ export function ChatClient({ conversationId }: ChatClientProps) {
                 <div className="mx-auto flex w-full max-w-3xl flex-col gap-3">
                   {messages.map((entry) => {
                     const groupedReactions = REACTIONS.map((emoji) => {
-                      const usersForEmoji = entry.reactions.filter(
+                      const usersForEmoji = (entry.reactions as MessageReaction[]).filter(
                         (reaction) => reaction.emoji === emoji
                       );
                       return {

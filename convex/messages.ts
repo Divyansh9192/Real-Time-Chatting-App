@@ -27,7 +27,8 @@ async function requireConversationMembership(ctx: any, conversationId: any, curr
   if (!conversation) {
     throw new ConvexError("Conversation not found");
   }
-  if (!conversation.participants.includes(currentUserId)) {
+  const participants = conversation.participants ?? conversation.participantIds ?? [];
+  if (!participants.includes(currentUserId)) {
     throw new ConvexError("Unauthorized");
   }
   return conversation;
@@ -78,7 +79,10 @@ export const listByConversation = query({
       const sender = senderMap.get(message.senderId);
       return {
         ...message,
-        senderName: sender?.name ?? "Unknown User",
+        content: message.content ?? message.text ?? "",
+        isDeleted: message.isDeleted ?? false,
+        reactions: message.reactions ?? [],
+        senderName: sender?.name ?? sender?.username ?? "Unknown User",
         senderImageUrl: sender?.imageUrl ?? "",
         isOwnMessage: message.senderId === currentUser._id,
       };
@@ -204,20 +208,21 @@ export const toggleReaction = mutation({
 
     await requireConversationMembership(ctx, message.conversationId, currentUser._id);
     if (message.isDeleted) {
-      return message.reactions;
+      return message.reactions ?? [];
     }
 
-    const hasReaction = message.reactions.some(
+    const existingReactions = message.reactions ?? [];
+    const hasReaction = existingReactions.some(
       (reaction: any) =>
         reaction.userId === currentUser._id && reaction.emoji === args.emoji
     );
 
     const reactions = hasReaction
-      ? message.reactions.filter(
+      ? existingReactions.filter(
           (reaction: any) =>
             !(reaction.userId === currentUser._id && reaction.emoji === args.emoji)
         )
-      : [...message.reactions, { userId: currentUser._id, emoji: args.emoji }];
+      : [...existingReactions, { userId: currentUser._id, emoji: args.emoji }];
 
     await ctx.db.patch(message._id, { reactions });
     return reactions;
