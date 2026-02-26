@@ -285,7 +285,7 @@ export function ChatClient({ conversationId }: ChatClientProps) {
       setIsGroupDialogOpen(false);
       router.push(`/chat/${conversationId}`);
     } catch {
-      setGroupError("Group creation failed. Pick at least two people and try again.");
+      setGroupError("Group creation failed. Pick at least one person and try again.");
     }
   };
 
@@ -747,7 +747,7 @@ export function ChatClient({ conversationId }: ChatClientProps) {
             </Button>
             <Button
               onClick={handleCreateGroup}
-              disabled={!groupName.trim() || groupMemberIds.length < 2}
+              disabled={!groupName.trim() || groupMemberIds.length < 1}
               className="gap-2"
             >
               <Users className="h-4 w-4" />

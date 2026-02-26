@@ -213,8 +213,8 @@ export const createGroup = mutation({
     const uniqueMembers = Array.from(
       new Set<Id<"users">>([...args.memberIds, currentUser._id])
     );
-    if (uniqueMembers.length < 3) {
-      throw new ConvexError("A group needs at least 3 members including you");
+    if (uniqueMembers.length < 2) {
+      throw new ConvexError("A group needs at least 2 members including you");
     }
 
     return await ctx.db.insert("conversations", {
