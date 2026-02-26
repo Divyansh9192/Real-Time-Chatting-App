@@ -2,6 +2,14 @@
 import { mutation, query } from "./_generated/server";
 import { ConvexError, v } from "convex/values";
 
+function emailToHandle(email?: string | null) {
+  const normalized = email?.trim().toLowerCase() ?? "";
+  if (!normalized) {
+    return "";
+  }
+  return normalized.split("@")[0] ?? "";
+}
+
 const ALLOWED_REACTIONS = ["👍", "❤️", "😂", "😮", "😢"] as const;
 
 async function requireCurrentUser(ctx: any) {
@@ -84,6 +92,7 @@ export const listByConversation = query({
         reactions: message.reactions ?? [],
         senderName: sender?.name ?? sender?.username ?? "Unknown User",
         senderImageUrl: sender?.imageUrl ?? "",
+        senderEmailHandle: emailToHandle(sender?.email),
         isOwnMessage: message.senderId === currentUser._id,
       };
     });

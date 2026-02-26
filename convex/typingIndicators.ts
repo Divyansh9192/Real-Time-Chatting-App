@@ -2,6 +2,14 @@
 import { mutation, query } from "./_generated/server";
 import { ConvexError, v } from "convex/values";
 
+function emailToHandle(email?: string | null) {
+  const normalized = email?.trim().toLowerCase() ?? "";
+  if (!normalized) {
+    return "";
+  }
+  return normalized.split("@")[0] ?? "";
+}
+
 async function requireCurrentUser(ctx: any) {
   const identity = await ctx.auth.getUserIdentity();
   if (!identity) {
@@ -109,6 +117,7 @@ export const listForConversation = query({
     return others.map((row: any) => ({
       ...row,
       userName: userMap.get(row.userId)?.name ?? userMap.get(row.userId)?.username ?? "Someone",
+      userEmailHandle: emailToHandle(userMap.get(row.userId)?.email),
     }));
   },
 });

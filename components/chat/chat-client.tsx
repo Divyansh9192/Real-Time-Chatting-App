@@ -23,6 +23,40 @@ interface ChatClientProps {
   conversationId?: string;
 }
 
+type DisplayIdentity = {
+  name?: string | null;
+  emailHandle?: string | null;
+  userId?: Id<"users"> | string | null;
+};
+
+function normalizeDisplayName(name?: string | null) {
+  const normalized = name?.trim();
+  return normalized || "Unknown User";
+}
+
+function getUserIdSuffix(userId?: Id<"users"> | string | null) {
+  if (!userId) {
+    return "user";
+  }
+  const raw = String(userId);
+  return raw.slice(-4);
+}
+
+function buildDisplayLabel(identity: DisplayIdentity, duplicateNames: Set<string>) {
+  const name = normalizeDisplayName(identity.name);
+  const duplicateKey = name.toLowerCase();
+  if (!duplicateNames.has(duplicateKey)) {
+    return name;
+  }
+
+  const emailHandle = identity.emailHandle?.trim().toLowerCase();
+  if (emailHandle) {
+    return `${name}`;
+  }
+
+  return `${name} (${getUserIdSuffix(identity.userId)})`;
+}
+
 export function ChatClient({ conversationId }: ChatClientProps) {
   const router = useRouter();
   const { user } = useUser();
@@ -39,6 +73,7 @@ export function ChatClient({ conversationId }: ChatClientProps) {
       null
     );
   }, [conversations, selectedConversationId]);
+  const isGroupConversation = Boolean(selectedConversationSummary?.isGroup);
   const messages = useQuery(
     api.messages.listByConversation,
     selectedConversationId && selectedConversationSummary
@@ -182,8 +217,69 @@ export function ChatClient({ conversationId }: ChatClientProps) {
     if (!typingRows) {
       return [];
     }
-    return typingRows.filter((row) => clockMs - row.updatedAt < 2000);
+
+    const freshRows = typingRows.filter((row) => clockMs - row.updatedAt < 2000);
+    const dedupedByUser = new Map(
+      freshRows.map((row) => [String(row.userId), row])
+    );
+    return Array.from(dedupedByUser.values());
   }, [typingRows, clockMs]);
+
+  const duplicateGroupNameKeys = useMemo(() => {
+    if (!isGroupConversation) {
+      return new Set<string>();
+    }
+
+    const counts = new Map<string, number>();
+    const addName = (name?: string | null) => {
+      const key = normalizeDisplayName(name).toLowerCase();
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    };
+
+    selectedConversationSummary?.participants?.forEach((participant) => {
+      addName(participant.name);
+    });
+    messages?.forEach((entry) => {
+      addName(entry.senderName);
+    });
+    typingRows?.forEach((row) => {
+      addName(row.userName);
+    });
+
+    return new Set(
+      Array.from(counts.entries())
+        .filter(([, count]) => count > 1)
+        .map(([key]) => key)
+    );
+  }, [isGroupConversation, selectedConversationSummary, messages, typingRows]);
+
+  const typingIndicatorText = useMemo(() => {
+    if (activeTypers.length === 0) {
+      return "";
+    }
+
+    const labels = activeTypers.map((row) =>
+      buildDisplayLabel(
+        {
+          name: row.userName,
+          emailHandle: row.userEmailHandle,
+          userId: row.userId,
+        },
+        duplicateGroupNameKeys
+      )
+    );
+
+    if (labels.length === 1) {
+      return `${labels[0]} is typing...`;
+    }
+    if (!isGroupConversation) {
+      return `${labels[0]} is typing...`;
+    }
+    if (labels.length === 2) {
+      return `${labels[0]}, ${labels[1]} are typing...`;
+    }
+    return `${labels[0]}, ${labels[1]} +${labels.length - 2} more are typing...`;
+  }, [activeTypers, duplicateGroupNameKeys, isGroupConversation]);
 
   const handleOpenConversation = (id: Id<"conversations">) => {
     router.push(`/chat/${id}`);
@@ -625,6 +721,14 @@ export function ChatClient({ conversationId }: ChatClientProps) {
                         ),
                       };
                     }).filter((group) => group.count > 0);
+                    const senderLabel = buildDisplayLabel(
+                      {
+                        name: entry.senderName,
+                        emailHandle: entry.senderEmailHandle,
+                        userId: entry.senderId,
+                      },
+                      duplicateGroupNameKeys
+                    );
 
                     return (
                       <div
@@ -634,79 +738,106 @@ export function ChatClient({ conversationId }: ChatClientProps) {
                           entry.isOwnMessage ? "justify-end" : "justify-start"
                         )}
                       >
-                        <div className="relative max-w-[80%]">
-                          {!entry.isDeleted && (
-                            <div className="pointer-events-none absolute -top-8 right-0 z-10 flex gap-1 rounded-md border border-slate-200 bg-white p-1 opacity-0 shadow transition-opacity group-hover:pointer-events-auto group-hover:opacity-100">
-                              {REACTIONS.map((emoji) => (
-                                <button
-                                  key={`${entry._id}-${emoji}`}
-                                  className="rounded px-1.5 py-0.5 text-sm hover:bg-slate-100"
-                                  onClick={() =>
-                                    toggleReaction({ messageId: entry._id, emoji })
-                                  }
-                                >
-                                  {emoji}
-                                </button>
-                              ))}
-                              {entry.isOwnMessage && (
-                                <button
-                                  className="rounded p-1 text-rose-600 hover:bg-rose-50"
-                                  onClick={() => softDelete({ messageId: entry._id })}
-                                  title="Delete message"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
-                              )}
-                            </div>
+                        <div
+                          className={cn(
+                            "flex items-end gap-2",
+                            entry.isOwnMessage ? "flex-row-reverse" : "flex-row"
                           )}
+                        >
+                          {isGroupConversation && (
+                            <Avatar
+                              src={entry.senderImageUrl}
+                              alt={senderLabel}
+                              fallback={senderLabel.slice(0, 2).toUpperCase()}
+                              className="h-7 w-7 shrink-0 text-[10px]"
+                            />
+                          )}
+                          <div className="relative max-w-[80%]">
+                            {!entry.isDeleted && (
+                              <div className="pointer-events-none absolute -top-8 right-0 z-10 flex gap-1 rounded-md border border-slate-200 bg-white p-1 opacity-0 shadow transition-opacity group-hover:pointer-events-auto group-hover:opacity-100">
+                                {REACTIONS.map((emoji) => (
+                                  <button
+                                    key={`${entry._id}-${emoji}`}
+                                    className="rounded px-1.5 py-0.5 text-sm hover:bg-slate-100"
+                                    onClick={() =>
+                                      toggleReaction({ messageId: entry._id, emoji })
+                                    }
+                                  >
+                                    {emoji}
+                                  </button>
+                                ))}
+                                {entry.isOwnMessage && (
+                                  <button
+                                    className="rounded p-1 text-rose-600 hover:bg-rose-50"
+                                    onClick={() => softDelete({ messageId: entry._id })}
+                                    title="Delete message"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            )}
 
-                          <div
-                            className={cn(
-                              "rounded-2xl px-3 py-2 text-sm shadow-sm",
-                              entry.isOwnMessage
-                                ? "rounded-br-md bg-sky-600 text-white"
-                                : "rounded-bl-md bg-white text-slate-800"
-                            )}
-                          >
-                            {entry.isDeleted ? (
-                              <p className="italic text-slate-400">This message was deleted</p>
-                            ) : (
-                              <p className="whitespace-pre-wrap break-words">{entry.content}</p>
-                            )}
-                            <p
+                            <div
                               className={cn(
-                                "mt-1 text-[11px]",
-                                entry.isOwnMessage ? "text-sky-100" : "text-slate-400"
+                                "rounded-2xl px-3 py-2 text-sm shadow-sm",
+                                entry.isOwnMessage
+                                  ? "rounded-br-md bg-sky-600 text-white"
+                                  : "rounded-bl-md bg-white text-slate-800"
                               )}
                             >
-                              {formatMessageTimestamp(entry.createdAt)}
-                            </p>
-                          </div>
-
-                          {groupedReactions.length > 0 && (
-                            <div className="mt-1 flex flex-wrap gap-1">
-                              {groupedReactions.map((group) => (
-                                <button
-                                  key={`${entry._id}-count-${group.emoji}`}
+                              {isGroupConversation && (
+                                <p
                                   className={cn(
-                                    "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs",
-                                    group.reactedByMe
-                                      ? "border-sky-300 bg-sky-50 text-sky-700"
-                                      : "border-slate-200 bg-white text-slate-600"
+                                    "mb-1 text-[11px] font-medium",
+                                    entry.isOwnMessage ? "text-sky-100" : "text-slate-500"
                                   )}
-                                  onClick={() =>
-                                    toggleReaction({
-                                      messageId: entry._id,
-                                      emoji: group.emoji,
-                                    })
-                                  }
                                 >
-                                  <span>{group.emoji}</span>
-                                  <span>{group.count}</span>
-                                </button>
-                              ))}
+                                  {senderLabel}
+                                </p>
+                              )}
+                              {entry.isDeleted ? (
+                                <p className="italic text-slate-400">This message was deleted</p>
+                              ) : (
+                                <p className="whitespace-pre-wrap break-words">
+                                  {entry.content}
+                                </p>
+                              )}
+                              <p
+                                className={cn(
+                                  "mt-1 text-[11px]",
+                                  entry.isOwnMessage ? "text-sky-100" : "text-slate-400"
+                                )}
+                              >
+                                {formatMessageTimestamp(entry.createdAt)}
+                              </p>
                             </div>
-                          )}
+
+                            {groupedReactions.length > 0 && (
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {groupedReactions.map((group) => (
+                                  <button
+                                    key={`${entry._id}-count-${group.emoji}`}
+                                    className={cn(
+                                      "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs",
+                                      group.reactedByMe
+                                        ? "border-sky-300 bg-sky-50 text-sky-700"
+                                        : "border-slate-200 bg-white text-slate-600"
+                                    )}
+                                    onClick={() =>
+                                      toggleReaction({
+                                        messageId: entry._id,
+                                        emoji: group.emoji,
+                                      })
+                                    }
+                                  >
+                                    <span>{group.emoji}</span>
+                                    <span>{group.count}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );
@@ -732,12 +863,7 @@ export function ChatClient({ conversationId }: ChatClientProps) {
               )}
               {activeTypers.length > 0 && (
                 <div className="mx-auto mb-2 flex w-full max-w-3xl items-center gap-2 text-xs text-slate-500">
-                  <span>
-                    {activeTypers.length === 1
-                      ? `${activeTypers[0].userName} is typing`
-                      : `${activeTypers.length} people are typing`}
-                    ...
-                  </span>
+                  <span>{typingIndicatorText}</span>
                   <span className="inline-flex gap-1">
                     <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-slate-400 [animation-delay:-0.2s]" />
                     <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-slate-400 [animation-delay:-0.1s]" />
