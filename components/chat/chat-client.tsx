@@ -17,6 +17,8 @@ import { formatLastSeen, formatMessageTimestamp } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 const REACTIONS = ["👍", "❤️", "😂", "😮", "😢"] as const;
+const LONG_PRESS_MS = 420;
+const LONG_PRESS_MOVE_TOLERANCE_PX = 10;
 type MessageReaction = { userId: Id<"users">; emoji: string };
 
 interface ChatClientProps {
@@ -114,10 +116,14 @@ export function ChatClient({ conversationId }: ChatClientProps) {
   const [groupName, setGroupName] = useState("");
   const [groupMemberIds, setGroupMemberIds] = useState<Array<Id<"users">>>([]);
   const [groupError, setGroupError] = useState<string | null>(null);
+  const [activeMessageActionId, setActiveMessageActionId] = useState<string | null>(null);
 
   const scrollerRef = useRef<HTMLDivElement>(null);
   const previousMessageCountRef = useRef(0);
   const lastTypingPingRef = useRef(0);
+  const longPressTimerRef = useRef<number | null>(null);
+  const pressTargetIdRef = useRef<string | null>(null);
+  const pressStartPointRef = useRef<{ x: number; y: number } | null>(null);
 
   const clerkName =
     user?.fullName?.trim() ||
@@ -305,10 +311,46 @@ export function ChatClient({ conversationId }: ChatClientProps) {
   useEffect(() => {
     previousMessageCountRef.current = 0;
     setShowJumpToLatest(false);
+    setActiveMessageActionId(null);
     if (selectedConversationId) {
       requestAnimationFrame(() => scrollToBottom("auto"));
     }
   }, [selectedConversationId]);
+
+  const cancelLongPress = () => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    pressTargetIdRef.current = null;
+    pressStartPointRef.current = null;
+  };
+
+  const startLongPress = (messageId: string, x: number, y: number) => {
+    cancelLongPress();
+    pressTargetIdRef.current = messageId;
+    pressStartPointRef.current = { x, y };
+    longPressTimerRef.current = window.setTimeout(() => {
+      if (
+        pressTargetIdRef.current === messageId &&
+        pressStartPointRef.current !== null
+      ) {
+        setActiveMessageActionId(messageId);
+      }
+      longPressTimerRef.current = null;
+    }, LONG_PRESS_MS);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (longPressTimerRef.current !== null) {
+        window.clearTimeout(longPressTimerRef.current);
+      }
+      longPressTimerRef.current = null;
+      pressTargetIdRef.current = null;
+      pressStartPointRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     if (!messages) {
@@ -335,6 +377,10 @@ export function ChatClient({ conversationId }: ChatClientProps) {
   }, [markAsRead, selectedConversationId, latestMessageId]);
 
   const handleScroll = () => {
+    if (activeMessageActionId) {
+      setActiveMessageActionId(null);
+    }
+    cancelLongPress();
     const scroller = scrollerRef.current;
     if (!scroller) {
       return;
@@ -448,6 +494,16 @@ export function ChatClient({ conversationId }: ChatClientProps) {
     } finally {
       setIsDeletingConversation(false);
     }
+  };
+
+  const handleToggleReaction = (messageId: Id<"messages">, emoji: string) => {
+    setActiveMessageActionId(null);
+    toggleReaction({ messageId, emoji });
+  };
+
+  const handleSoftDeleteMessage = (messageId: Id<"messages">) => {
+    setActiveMessageActionId(null);
+    softDelete({ messageId });
   };
 
   const conversationPanelVisible = Boolean(selectedConversationId);
@@ -709,6 +765,9 @@ export function ChatClient({ conversationId }: ChatClientProps) {
               ) : (
                 <div className="mx-auto flex w-full max-w-3xl flex-col gap-3">
                   {messages.map((entry) => {
+                    const messageId = String(entry._id);
+                    const showMobileActions =
+                      !entry.isDeleted && activeMessageActionId === messageId;
                     const groupedReactions = REACTIONS.map((emoji) => {
                       const usersForEmoji = (entry.reactions as MessageReaction[]).filter(
                         (reaction) => reaction.emoji === emoji
@@ -752,16 +811,53 @@ export function ChatClient({ conversationId }: ChatClientProps) {
                               className="h-7 w-7 shrink-0 text-[10px]"
                             />
                           )}
-                          <div className="relative w-fit min-w-[8rem] max-w-[80%]">
+                          <div
+                            className="relative w-fit min-w-[8rem] max-w-[80%] select-none"
+                            onTouchStart={(event) => {
+                              if (!entry.isDeleted) {
+                                const firstTouch = event.touches[0];
+                                if (!firstTouch) {
+                                  return;
+                                }
+                                startLongPress(
+                                  messageId,
+                                  firstTouch.clientX,
+                                  firstTouch.clientY
+                                );
+                              }
+                            }}
+                            onTouchEnd={cancelLongPress}
+                            onTouchCancel={cancelLongPress}
+                            onTouchMove={(event) => {
+                              if (
+                                longPressTimerRef.current === null ||
+                                pressStartPointRef.current === null
+                              ) {
+                                return;
+                              }
+                              const firstTouch = event.touches[0];
+                              if (!firstTouch) {
+                                cancelLongPress();
+                                return;
+                              }
+                              const dx =
+                                firstTouch.clientX - pressStartPointRef.current.x;
+                              const dy =
+                                firstTouch.clientY - pressStartPointRef.current.y;
+                              const movedDistance = Math.sqrt(dx * dx + dy * dy);
+                              if (movedDistance > LONG_PRESS_MOVE_TOLERANCE_PX) {
+                                cancelLongPress();
+                              }
+                            }}
+                            onContextMenu={(event) => event.preventDefault()}
+                          >
                             {!entry.isDeleted && (
-                              <div className="pointer-events-none absolute -top-8 right-0 z-10 flex gap-1 rounded-md border border-slate-200 bg-white p-1 opacity-0 shadow transition-opacity group-hover:pointer-events-auto group-hover:opacity-100">
+                              <div className="pointer-events-none absolute -top-8 right-0 z-10 hidden gap-1 rounded-md border border-slate-200 bg-white p-1 opacity-0 shadow transition-opacity md:flex md:group-hover:pointer-events-auto md:group-hover:opacity-100">
                                 {REACTIONS.map((emoji) => (
                                   <button
                                     key={`${entry._id}-${emoji}`}
                                     className="rounded px-1.5 py-0.5 text-sm hover:bg-slate-100"
-                                    onClick={() =>
-                                      toggleReaction({ messageId: entry._id, emoji })
-                                    }
+                                    onClick={() => handleToggleReaction(entry._id, emoji)}
                                   >
                                     {emoji}
                                   </button>
@@ -769,7 +865,29 @@ export function ChatClient({ conversationId }: ChatClientProps) {
                                 {entry.isOwnMessage && (
                                   <button
                                     className="rounded p-1 text-rose-600 hover:bg-rose-50"
-                                    onClick={() => softDelete({ messageId: entry._id })}
+                                    onClick={() => handleSoftDeleteMessage(entry._id)}
+                                    title="Delete message"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                            {showMobileActions && (
+                              <div className="mb-1 flex flex-wrap gap-1 rounded-md border border-slate-200 bg-white p-1 md:hidden">
+                                {REACTIONS.map((emoji) => (
+                                  <button
+                                    key={`${entry._id}-mobile-${emoji}`}
+                                    className="rounded px-1.5 py-0.5 text-sm hover:bg-slate-100"
+                                    onClick={() => handleToggleReaction(entry._id, emoji)}
+                                  >
+                                    {emoji}
+                                  </button>
+                                ))}
+                                {entry.isOwnMessage && (
+                                  <button
+                                    className="rounded p-1 text-rose-600 hover:bg-rose-50"
+                                    onClick={() => handleSoftDeleteMessage(entry._id)}
                                     title="Delete message"
                                   >
                                     <Trash2 className="h-3.5 w-3.5" />
@@ -825,10 +943,7 @@ export function ChatClient({ conversationId }: ChatClientProps) {
                                         : "border-slate-200 bg-white text-slate-600"
                                     )}
                                     onClick={() =>
-                                      toggleReaction({
-                                        messageId: entry._id,
-                                        emoji: group.emoji,
-                                      })
+                                      handleToggleReaction(entry._id, group.emoji)
                                     }
                                   >
                                     <span>{group.emoji}</span>
