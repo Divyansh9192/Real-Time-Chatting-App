@@ -26,6 +26,87 @@ function getConversationParticipants(conversation: Doc<"conversations">) {
   return conversation.participants ?? conversation.participantIds ?? [];
 }
 
+function dedupeParticipantIds(participantIds: Array<Id<"users">>) {
+  const seen = new Set<string>();
+  const deduped: Array<Id<"users">> = [];
+  for (const participantId of participantIds) {
+    const key = String(participantId);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.push(participantId);
+  }
+  return deduped;
+}
+
+function dedupeUsersByIdentity(users: Array<Doc<"users">>) {
+  const seenIds = new Set<string>();
+  const seenClerkIds = new Set<string>();
+  const seenEmails = new Set<string>();
+  const deduped: Array<Doc<"users">> = [];
+  for (const user of users) {
+    const idKey = String(user._id);
+    const clerkKey = user.clerkId.trim().toLowerCase();
+    const emailKey = (user.email ?? "").trim().toLowerCase();
+    const alreadySeen =
+      seenIds.has(idKey) ||
+      (clerkKey ? seenClerkIds.has(clerkKey) : false) ||
+      (emailKey ? seenEmails.has(emailKey) : false);
+    if (alreadySeen) {
+      continue;
+    }
+    seenIds.add(idKey);
+    if (clerkKey) {
+      seenClerkIds.add(clerkKey);
+    }
+    if (emailKey) {
+      seenEmails.add(emailKey);
+    }
+    deduped.push(user);
+  }
+  return deduped;
+}
+
+function collapseCurrentUserAliases(
+  users: Array<Doc<"users">>,
+  currentUser: Doc<"users">
+) {
+  const currentClerkId = currentUser.clerkId.trim().toLowerCase();
+  const currentEmail = (currentUser.email ?? "").trim().toLowerCase();
+  const currentName = (currentUser.name ?? "").trim().toLowerCase();
+  const currentImageUrl = (currentUser.imageUrl ?? "").trim();
+
+  let insertedCurrentUser = false;
+  const collapsed: Array<Doc<"users">> = [];
+  for (const user of users) {
+    const userClerkId = user.clerkId.trim().toLowerCase();
+    const userEmail = (user.email ?? "").trim().toLowerCase();
+    const userName = (user.name ?? "").trim().toLowerCase();
+    const userImageUrl = (user.imageUrl ?? "").trim();
+
+    const isCurrentUserAlias =
+      user._id === currentUser._id ||
+      (currentClerkId && userClerkId === currentClerkId) ||
+      (currentEmail && userEmail && userEmail === currentEmail) ||
+      (currentName &&
+        userName === currentName &&
+        currentImageUrl &&
+        userImageUrl === currentImageUrl);
+
+    if (isCurrentUserAlias) {
+      if (!insertedCurrentUser) {
+        collapsed.push(currentUser);
+        insertedCurrentUser = true;
+      }
+      continue;
+    }
+    collapsed.push(user);
+  }
+
+  return collapsed;
+}
+
 function getConversationLastMessageTime(conversation: Doc<"conversations">) {
   return conversation.lastMessageTime ?? conversation.lastMessageAt ?? 0;
 }
@@ -53,14 +134,29 @@ export const listForSidebar = query({
 
     const rows = await Promise.all(
       myConversations.map(async (conversation) => {
-        const participants = getConversationParticipants(conversation);
+        const participantIds = dedupeParticipantIds(
+          getConversationParticipants(conversation)
+        );
         const isGroup = isGroupConversation(conversation);
         const participantUsers = await Promise.all(
-          participants.map((participantId) => ctx.db.get(participantId))
+          participantIds.map((participantId) => ctx.db.get(participantId))
         );
-        const safeParticipants = participantUsers.filter(
-          (user): user is Doc<"users"> => user !== null
+        const safeParticipants = dedupeUsersByIdentity(
+          participantUsers.filter(
+            (user): user is Doc<"users"> => user !== null
+          )
         );
+        const uniqueParticipants = dedupeUsersByIdentity(
+          collapseCurrentUserAliases(safeParticipants, currentUser)
+        );
+
+        const otherUser = uniqueParticipants.find(
+          (user) => user._id !== currentUser._id
+        );
+        const title = isGroup
+          ? conversation.groupName ?? "Untitled Group"
+          : otherUser?.name ?? "Unknown User";
+        const avatarUrl = isGroup ? "" : otherUser?.imageUrl ?? "";
 
         let lastMessage: Doc<"messages"> | null = null;
         if (conversation.lastMessageId) {
@@ -98,20 +194,12 @@ export const listForSidebar = query({
             message.createdAt > lastReadCreatedAt
         ).length;
 
-        const otherUser = safeParticipants.find(
-          (user) => user._id !== currentUser._id
-        );
-        const title = isGroup
-          ? conversation.groupName ?? "Untitled Group"
-          : otherUser?.name ?? "Unknown User";
-        const avatarUrl = isGroup ? "" : otherUser?.imageUrl ?? "";
-
         return {
           conversationId: conversation._id,
           isGroup,
           title,
           avatarUrl,
-          memberCount: safeParticipants.length,
+          memberCount: uniqueParticipants.length,
           isOnline: isGroup ? false : Boolean(otherUser?.isOnline),
           lastSeen: isGroup ? null : otherUser?.lastSeen ?? null,
           lastMessagePreview: lastMessage
@@ -121,9 +209,11 @@ export const listForSidebar = query({
             : "",
           lastMessageTime: lastMessage?.createdAt ?? getConversationLastMessageTime(conversation),
           unreadCount,
-          participants: safeParticipants.map((user) => ({
+          participants: uniqueParticipants.map((user) => ({
             _id: user._id,
+            clerkId: user.clerkId,
             name: user.name,
+            email: user.email,
             imageUrl: user.imageUrl,
             isOnline: user.isOnline,
             lastSeen: user.lastSeen,
@@ -153,15 +243,22 @@ export const getById = query({
       throw new ConvexError("Unauthorized");
     }
 
+    const participantIds = dedupeParticipantIds(participants);
     const participantUsers = await Promise.all(
-      participants.map((participantId) => ctx.db.get(participantId))
+      participantIds.map((participantId) => ctx.db.get(participantId))
+    );
+    const safeParticipants = dedupeUsersByIdentity(
+      participantUsers.filter(
+        (participant): participant is Doc<"users"> => participant !== null
+      )
+    );
+    const uniqueParticipants = dedupeUsersByIdentity(
+      collapseCurrentUserAliases(safeParticipants, currentUser)
     );
 
     return {
       ...conversation,
-      participants: participantUsers.filter(
-        (participant): participant is Doc<"users"> => participant !== null
-      ),
+      participants: uniqueParticipants,
     };
   },
 });

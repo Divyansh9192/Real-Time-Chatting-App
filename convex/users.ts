@@ -99,9 +99,39 @@ export const listUsers = query({
   args: {},
   handler: async (ctx) => {
     const { currentUser } = await requireCurrentUser(ctx);
+    const currentEmail = (currentUser.email ?? "").trim().toLowerCase();
+    const currentName = (currentUser.name ?? "").trim().toLowerCase();
+    const currentImageUrl = (currentUser.imageUrl ?? "").trim();
     const users = await ctx.db.query("users").collect();
     return users
-      .filter((user) => user._id !== currentUser._id)
+      .filter(
+        (user) => {
+          if (user._id === currentUser._id) {
+            return false;
+          }
+          if (user.clerkId === currentUser.clerkId) {
+            return false;
+          }
+
+          const userEmail = (user.email ?? "").trim().toLowerCase();
+          if (currentEmail && userEmail && userEmail === currentEmail) {
+            return false;
+          }
+
+          const userName = (user.name ?? "").trim().toLowerCase();
+          const userImageUrl = (user.imageUrl ?? "").trim();
+          if (
+            currentName &&
+            userName === currentName &&
+            currentImageUrl &&
+            userImageUrl === currentImageUrl
+          ) {
+            return false;
+          }
+
+          return true;
+        }
+      )
       .map((user) => normalizeUser(user))
       .sort((a, b) => a.name.localeCompare(b.name));
   },

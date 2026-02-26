@@ -75,6 +75,90 @@ export function ChatClient({ conversationId }: ChatClientProps) {
       null
     );
   }, [conversations, selectedConversationId]);
+  const groupMemberSummary = useMemo(() => {
+    if (!selectedConversationSummary?.isGroup) {
+      return {
+        label: "",
+        count: 0,
+      };
+    }
+
+    const myUserId = me?._id;
+    const myClerkId = me?.clerkId?.trim().toLowerCase();
+    const myEmail = me?.email?.trim().toLowerCase();
+    const myNameKey = me?.name?.trim().toLowerCase() ?? "";
+    const fallbackMeName = me?.name?.trim() ?? "";
+    const seenParticipantKeys = new Set<string>();
+    const memberLabels: string[] = [];
+    let hasYouLabel = false;
+
+    (selectedConversationSummary.participants ?? []).forEach((participant) => {
+      const participantIdKey = String(participant._id);
+      const participantClerkKey = participant.clerkId?.trim().toLowerCase() ?? "";
+      const participantEmailKey = participant.email?.trim().toLowerCase() ?? "";
+      const participantIdentityKey = participantClerkKey
+        ? `clerk:${participantClerkKey}`
+        : participantEmailKey
+          ? `email:${participantEmailKey}`
+          : `id:${participantIdKey}`;
+
+      if (seenParticipantKeys.has(participantIdentityKey)) {
+        return;
+      }
+      seenParticipantKeys.add(participantIdentityKey);
+
+      const isCurrentUserAlias =
+        (myUserId && participant._id === myUserId) ||
+        (myClerkId && participantClerkKey && participantClerkKey === myClerkId) ||
+        (myEmail && participantEmailKey && participantEmailKey === myEmail);
+      const isWeakCurrentUserAlias =
+        !isCurrentUserAlias &&
+        hasYouLabel &&
+        myNameKey &&
+        normalizeDisplayName(participant.name).toLowerCase() === myNameKey &&
+        !participantClerkKey &&
+        !participantEmailKey;
+      if (isCurrentUserAlias || isWeakCurrentUserAlias) {
+        if (!hasYouLabel) {
+          memberLabels.push("You");
+          hasYouLabel = true;
+        }
+        return;
+      }
+      memberLabels.push(normalizeDisplayName(participant.name));
+    });
+
+    if (hasYouLabel && myNameKey) {
+      const duplicateSelfNameIndex = memberLabels.findIndex(
+        (label) => label.toLowerCase() === myNameKey
+      );
+      if (duplicateSelfNameIndex >= 0) {
+        memberLabels.splice(duplicateSelfNameIndex, 1);
+      }
+    }
+
+    if (!hasYouLabel && myNameKey) {
+      const selfNameIndex = memberLabels.findIndex(
+        (label) => label.toLowerCase() === myNameKey
+      );
+      if (selfNameIndex >= 0) {
+        memberLabels[selfNameIndex] = "You";
+      } else if (fallbackMeName && memberLabels.length > 0) {
+        // Last-resort fallback for legacy data where identity fields are missing.
+        const maybeSelfIndex = memberLabels.findIndex(
+          (label) => label.toLowerCase() === fallbackMeName.toLowerCase()
+        );
+        if (maybeSelfIndex >= 0) {
+          memberLabels[maybeSelfIndex] = "You";
+        }
+      }
+    }
+
+    return {
+      label: memberLabels.join(", "),
+      count: memberLabels.length,
+    };
+  }, [selectedConversationSummary, me?._id, me?.clerkId, me?.email, me?.name]);
   const isGroupConversation = Boolean(selectedConversationSummary?.isGroup);
   const messages = useQuery(
     api.messages.listByConversation,
@@ -728,7 +812,9 @@ export function ChatClient({ conversationId }: ChatClientProps) {
                     </p>
                     <p className="truncate text-xs text-slate-500">
                       {selectedConversationSummary.isGroup
-                        ? `${selectedConversationSummary.memberCount} members`
+                        ? groupMemberSummary.label
+                          ? `${groupMemberSummary.count} members - ${groupMemberSummary.label}`
+                          : `${groupMemberSummary.count || selectedConversationSummary.memberCount} members`
                         : selectedConversationSummary.isOnline
                           ? "Online"
                           : formatLastSeen(selectedConversationSummary.lastSeen)}
