@@ -15,7 +15,7 @@ export function Dialog({ open, onClose, title, children, className }: DialogProp
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-end justify-center p-3 sm:items-center sm:p-4">
       <button
         className="absolute inset-0 bg-slate-900/50"
         onClick={onClose}
@@ -23,7 +23,7 @@ export function Dialog({ open, onClose, title, children, className }: DialogProp
       />
       <div
         className={cn(
-          "relative z-10 w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-xl",
+          "relative z-10 max-h-[calc(100dvh-1.5rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-xl sm:max-h-[calc(100dvh-2rem)]",
           className
         )}
         role="dialog"

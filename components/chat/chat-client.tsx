@@ -453,11 +453,11 @@ export function ChatClient({ conversationId }: ChatClientProps) {
   const conversationPanelVisible = Boolean(selectedConversationId);
 
   return (
-    <div className="h-screen bg-slate-100 md:flex">
+    <div className="h-[100dvh] min-h-[100dvh] bg-slate-100 md:flex">
       <aside
         className={cn(
-          "h-full w-full border-r border-slate-200 bg-white md:block md:w-[300px] md:min-w-[300px]",
-          conversationPanelVisible && "hidden md:block"
+          "h-full w-full flex-col border-r border-slate-200 bg-white md:w-[300px] md:min-w-[300px]",
+          conversationPanelVisible ? "hidden md:flex" : "flex"
         )}
       >
         <div className="border-b border-slate-200 px-4 py-3">
@@ -484,7 +484,7 @@ export function ChatClient({ conversationId }: ChatClientProps) {
           </div>
         </div>
 
-        <div className="space-y-3 p-3">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
           {bannerMessage && (
             <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
               {bannerMessage}
@@ -513,7 +513,7 @@ export function ChatClient({ conversationId }: ChatClientProps) {
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
               Conversations
             </p>
-            <div className="max-h-[36vh] space-y-1 overflow-y-auto">
+            <div className="space-y-1 md:max-h-[36vh] md:overflow-y-auto">
               {!conversations ? (
                 <>
                   <Skeleton className="h-14 w-full" />
@@ -575,7 +575,7 @@ export function ChatClient({ conversationId }: ChatClientProps) {
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
               People
             </p>
-            <div className="max-h-[30vh] space-y-1 overflow-y-auto">
+            <div className="space-y-1 md:max-h-[30vh] md:overflow-y-auto">
               {!users ? (
                 <>
                   <Skeleton className="h-12 w-full" />
@@ -619,8 +619,8 @@ export function ChatClient({ conversationId }: ChatClientProps) {
 
       <section
         className={cn(
-          "hidden h-full flex-1 flex-col md:flex",
-          conversationPanelVisible && "flex"
+          "h-full min-h-0 flex-1 flex-col",
+          conversationPanelVisible ? "flex" : "hidden md:flex"
         )}
       >
         {!selectedConversationId ? (
@@ -699,7 +699,7 @@ export function ChatClient({ conversationId }: ChatClientProps) {
 
             <div
               ref={scrollerRef}
-              className="relative flex-1 overflow-y-auto bg-slate-50 px-4 py-4"
+              className="relative min-h-0 flex-1 overflow-y-auto bg-slate-50 px-4 py-4"
               onScroll={handleScroll}
             >
               {messages.length === 0 ? (
@@ -848,14 +848,14 @@ export function ChatClient({ conversationId }: ChatClientProps) {
               {showJumpToLatest && (
                 <button
                   onClick={() => scrollToBottom("smooth")}
-                  className="fixed bottom-24 right-4 rounded-full bg-sky-600 px-4 py-2 text-sm font-medium text-white shadow-lg hover:bg-sky-700 md:right-8"
+                  className="fixed bottom-[calc(env(safe-area-inset-bottom)+5.5rem)] right-4 z-20 rounded-full bg-sky-600 px-4 py-2 text-sm font-medium text-white shadow-lg hover:bg-sky-700 md:right-8"
                 >
                   ↓ New messages
                 </button>
               )}
             </div>
 
-            <footer className="border-t border-slate-200 bg-white px-4 py-3">
+            <footer className="border-t border-slate-200 bg-white px-4 py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
               {deleteError && (
                 <div className="mx-auto mb-2 w-full max-w-3xl rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
                   {deleteError}

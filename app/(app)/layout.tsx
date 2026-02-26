@@ -8,7 +8,7 @@ export default function AppLayout({
   return (
     <>
       <SignedIn>
-        <div className="h-screen">{children}</div>
+        <div className="h-[100dvh] min-h-[100dvh]">{children}</div>
       </SignedIn>
       <SignedOut>
         <RedirectToSignIn />

@@ -2,7 +2,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export default function ChatLoading() {
   return (
-    <div className="h-screen bg-slate-100 p-4 md:flex">
+    <div className="h-[100dvh] min-h-[100dvh] bg-slate-100 p-4 md:flex">
       <aside className="hidden w-[300px] min-w-[300px] border-r border-slate-200 bg-white p-3 md:block">
         <Skeleton className="mb-3 h-10 w-full" />
         <Skeleton className="mb-3 h-10 w-full" />

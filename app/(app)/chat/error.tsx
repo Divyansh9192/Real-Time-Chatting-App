@@ -10,7 +10,7 @@ export default function ChatError({
   reset: () => void;
 }) {
   return (
-    <div className="flex h-screen items-center justify-center bg-slate-100 p-4">
+    <div className="flex h-[100dvh] min-h-[100dvh] items-center justify-center bg-slate-100 p-4">
       <div className="w-full max-w-md rounded-xl border border-rose-200 bg-white p-6">
         <h2 className="mb-2 text-lg font-semibold text-slate-900">
           Something went wrong
