@@ -7,7 +7,9 @@ export default function AppLayout({
 }) {
   return (
     <>
-      <SignedIn>{children}</SignedIn>
+      <SignedIn>
+        <div className="h-screen">{children}</div>
+      </SignedIn>
       <SignedOut>
         <RedirectToSignIn />
       </SignedOut>
