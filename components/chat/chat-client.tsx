@@ -82,6 +82,17 @@ export function ChatClient({ conversationId }: ChatClientProps) {
     undefined;
   const clerkImageUrl = user?.imageUrl || undefined;
 
+  const pingTyping = () => {
+    if (!selectedConversationId) {
+      return;
+    }
+    const now = Date.now();
+    if (now - lastTypingPingRef.current > 300) {
+      lastTypingPingRef.current = now;
+      upsertTyping({ conversationId: selectedConversationId }).catch(() => undefined);
+    }
+  };
+
   useEffect(() => {
     ensureCurrentUser({
       name: clerkName,
@@ -228,11 +239,7 @@ export function ChatClient({ conversationId }: ChatClientProps) {
       return;
     }
 
-    const now = Date.now();
-    if (now - lastTypingPingRef.current > 800) {
-      lastTypingPingRef.current = now;
-      upsertTyping({ conversationId: selectedConversationId }).catch(() => undefined);
-    }
+    pingTyping();
   };
 
   const submitMessage = async (content: string) => {
@@ -630,8 +637,19 @@ export function ChatClient({ conversationId }: ChatClientProps) {
                 </div>
               )}
 
+              {showJumpToLatest && (
+                <button
+                  onClick={() => scrollToBottom("smooth")}
+                  className="fixed bottom-24 right-4 rounded-full bg-sky-600 px-4 py-2 text-sm font-medium text-white shadow-lg hover:bg-sky-700 md:right-8"
+                >
+                  ↓ New messages
+                </button>
+              )}
+            </div>
+
+            <footer className="border-t border-slate-200 bg-white px-4 py-3">
               {activeTypers.length > 0 && (
-                <div className="mx-auto mt-3 flex w-full max-w-3xl items-center gap-2 text-xs text-slate-500">
+                <div className="mx-auto mb-2 flex w-full max-w-3xl items-center gap-2 text-xs text-slate-500">
                   <span>
                     {activeTypers.length === 1
                       ? `${activeTypers[0].userName} is typing`
@@ -645,18 +663,6 @@ export function ChatClient({ conversationId }: ChatClientProps) {
                   </span>
                 </div>
               )}
-
-              {showJumpToLatest && (
-                <button
-                  onClick={() => scrollToBottom("smooth")}
-                  className="fixed bottom-24 right-4 rounded-full bg-sky-600 px-4 py-2 text-sm font-medium text-white shadow-lg hover:bg-sky-700 md:right-8"
-                >
-                  ↓ New messages
-                </button>
-              )}
-            </div>
-
-            <footer className="border-t border-slate-200 bg-white px-4 py-3">
               {sendError && (
                 <div className="mb-2 flex items-center justify-between rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
                   <span>Message failed to send.</span>
@@ -674,6 +680,15 @@ export function ChatClient({ conversationId }: ChatClientProps) {
                 <Input
                   value={message}
                   onChange={(event) => handleMessageChange(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (
+                      event.key.length === 1 ||
+                      event.key === "Backspace" ||
+                      event.key === "Delete"
+                    ) {
+                      pingTyping();
+                    }
+                  }}
                   onBlur={() => {
                     if (selectedConversationId) {
                       clearTyping({ conversationId: selectedConversationId }).catch(
