@@ -34,7 +34,6 @@ export default defineSchema({
     conversationId: v.id("conversations"),
     senderId: v.id("users"),
     content: v.optional(v.string()),
-    // Legacy field kept for local schema compatibility.
     text: v.optional(v.string()),
     createdAt: v.number(),
     isDeleted: v.optional(v.boolean()),
@@ -46,7 +45,6 @@ export default defineSchema({
         })
       )
     ),
-    // Legacy field kept for local schema compatibility.
     seenBy: v.optional(v.array(v.id("users"))),
   }).index("by_conversation_created_at", ["conversationId", "createdAt"]),
 
