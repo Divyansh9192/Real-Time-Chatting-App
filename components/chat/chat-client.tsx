@@ -850,7 +850,7 @@ export function ChatClient({ conversationId }: ChatClientProps) {
                 </div>
               ) : (
                 <div className="mx-auto flex w-full max-w-3xl flex-col gap-3">
-                  {messages.map((entry, index) => {
+                  {messages.map((entry) => {
                     const messageId = String(entry._id);
                     const showMobileActions =
                       !entry.isDeleted && activeMessageActionId === messageId;
@@ -938,31 +938,34 @@ export function ChatClient({ conversationId }: ChatClientProps) {
                             onContextMenu={(event) => event.preventDefault()}
                           >
                             {!entry.isDeleted && (
-                              <div
-                                className={cn(
-                                  "pointer-events-none absolute z-10 hidden flex-wrap gap-1 rounded-md border border-slate-200 bg-white p-1 opacity-0 shadow transition-opacity md:flex md:group-hover:pointer-events-auto md:group-hover:opacity-100",
-                                  entry.isOwnMessage ? "right-0" : "left-0",
-                                  index === 0 ? "top-full" : "-top-8"
-                                )}
-                              >
-                                {REACTIONS.map((emoji) => (
-                                  <button
-                                    key={`${entry._id}-${emoji}`}
-                                    className="rounded px-1.5 py-0.5 text-sm hover:bg-slate-100"
-                                    onClick={() => handleToggleReaction(entry._id, emoji)}
+                              <div className="hidden md:block">
+                                <div className="max-h-0 overflow-hidden opacity-0 transition-all duration-150 group-hover:max-h-20 group-hover:opacity-100">
+                                  <div
+                                    className={cn(
+                                      "mb-1 flex w-fit max-w-full flex-wrap gap-1 rounded-md border border-slate-200 bg-white p-1 shadow",
+                                      entry.isOwnMessage ? "ml-auto" : "mr-auto"
+                                    )}
                                   >
-                                    {emoji}
-                                  </button>
-                                ))}
-                                {entry.isOwnMessage && (
-                                  <button
-                                    className="rounded p-1 text-rose-600 hover:bg-rose-50"
-                                    onClick={() => handleSoftDeleteMessage(entry._id)}
-                                    title="Delete message"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </button>
-                                )}
+                                    {REACTIONS.map((emoji) => (
+                                      <button
+                                        key={`${entry._id}-${emoji}`}
+                                        className="rounded px-1.5 py-0.5 text-sm hover:bg-slate-100"
+                                        onClick={() => handleToggleReaction(entry._id, emoji)}
+                                      >
+                                        {emoji}
+                                      </button>
+                                    ))}
+                                    {entry.isOwnMessage && (
+                                      <button
+                                        className="rounded p-1 text-rose-600 hover:bg-rose-50"
+                                        onClick={() => handleSoftDeleteMessage(entry._id)}
+                                        title="Delete message"
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
                               </div>
                             )}
                             {showMobileActions && (
