@@ -1116,6 +1116,9 @@ export function ChatClient({ conversationId }: ChatClientProps) {
                   }}
                   placeholder="Type a message"
                 />
+                <p className="text-gray-400 text-sm mt-1">
+                  {message.length}/500
+                </p>
                 <Button type="submit" disabled={isSending || !message.trim()}>
                   <Send className="h-4 w-4" />
                 </Button>
