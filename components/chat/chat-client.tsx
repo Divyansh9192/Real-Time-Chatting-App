@@ -850,7 +850,7 @@ export function ChatClient({ conversationId }: ChatClientProps) {
                 </div>
               ) : (
                 <div className="mx-auto flex w-full max-w-3xl flex-col gap-3">
-                  {messages.map((entry) => {
+                  {messages.map((entry, index) => {
                     const messageId = String(entry._id);
                     const showMobileActions =
                       !entry.isDeleted && activeMessageActionId === messageId;
@@ -938,7 +938,13 @@ export function ChatClient({ conversationId }: ChatClientProps) {
                             onContextMenu={(event) => event.preventDefault()}
                           >
                             {!entry.isDeleted && (
-                              <div className="pointer-events-none absolute -top-8 right-0 z-10 hidden gap-1 rounded-md border border-slate-200 bg-white p-1 opacity-0 shadow transition-opacity md:flex md:group-hover:pointer-events-auto md:group-hover:opacity-100">
+                              <div
+                                className={cn(
+                                  "pointer-events-none absolute z-10 hidden flex-wrap gap-1 rounded-md border border-slate-200 bg-white p-1 opacity-0 shadow transition-opacity md:flex md:group-hover:pointer-events-auto md:group-hover:opacity-100",
+                                  entry.isOwnMessage ? "right-0" : "left-0",
+                                  index === 0 ? "top-full" : "-top-8"
+                                )}
+                              >
                                 {REACTIONS.map((emoji) => (
                                   <button
                                     key={`${entry._id}-${emoji}`}
