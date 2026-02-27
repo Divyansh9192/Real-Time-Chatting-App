@@ -7,6 +7,9 @@ Production-style live chat web app built with:
 - Clerk (email + social auth)
 - Tailwind CSS + shadcn/ui-style component layer
 
+# Live Preview:
+   - [NeonChats](https://neonchats.vercel.app)
+
 ## Setup
 
 1. Install dependencies:
